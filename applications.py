@@ -133,23 +133,41 @@ class ApplicationsService:
             or str(user.id)
         )
 
-    def review_embed(self, app: Application, status: str | None = None) -> discord.Embed:
+    def review_embed(
+        self,
+        app: Application,
+        status: str | None = None,
+        reviewer: discord.abc.User | None = None,
+    ) -> discord.Embed:
         status = status or app.status
         label, color = STATUS_TITLES.get(status, STATUS_TITLES["pending"])
+
+        lines = [
+            f"Заявка от <@{app.applicant_id}>.",
+            f"Discord ID: `{app.applicant_id}`",
+            "",
+            "Уважаемый сотрудник Lifeinvader!",
+            "",
+            "Обратите внимание на то, как записаны Имя Фамилия и статик персонажа!",
+            "Проверьте данные дважды перед тем, как одобрить заявку!",
+            "",
+            "Пользователь оставил следующие данные:",
+            f"**Имя Фамилия:** {app.name}",
+            f"**Статик:** {app.static}",
+        ]
+        if reviewer is not None and status == "approved":
+            lines += ["", f"**Одобрил(-а):** {reviewer.mention}"]
+        elif reviewer is not None and status == "declined":
+            lines += ["", f"**Отклонил(-а):** {reviewer.mention}"]
+
         embed = discord.Embed(
             title=f"Заявка на выдачу ролей — {label}",
             color=color,
-            description=(
-                f"Заявка от <@{app.applicant_id}>.\n"
-                f"Discord ID: `{app.applicant_id}`\n\n"
-                "Уважаемый сотрудник Lifeinvader!\n\n"
-                "Обратите внимание на то, как записаны Имя Фамилия и статик персонажа."
-                " Проверьте данные дважды перед тем, как одобрить заявку.\n\n"
-                f"**Имя Фамилия:** {app.name}\n"
-                f"**Статик:** {app.static}"
-            ),
+            description="\n".join(lines),
         )
-        embed.set_footer(text=f"Lifeinvader Helper • {app.created_at}")
+        embed.set_footer(
+            text=f"Заявка №{app.id} • Lifeinvader Helper • {app.created_at}"
+        )
         return embed
 
     def audit_embed(self, app: Application, reviewer: discord.abc.User) -> discord.Embed:
@@ -347,7 +365,7 @@ class ApplicationsService:
         )
         approved = replace(app, status="approved")
         await interaction.edit_original_response(
-            embed=self.review_embed(approved), view=None
+            embed=self.review_embed(approved, reviewer=interaction.user), view=None
         )
 
         audit_channel = guild.get_channel(config.APPLY_AUDIT_CHANNEL_ID)
@@ -412,6 +430,6 @@ class ApplicationsService:
         )
         declined = replace(app, status="declined")
         await interaction.edit_original_response(
-            embed=self.review_embed(declined), view=None
+            embed=self.review_embed(declined, reviewer=interaction.user), view=None
         )
         await notices.reply(interaction, "Заявка отклонена.", ephemeral=True)
