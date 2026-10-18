@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import discord
 
 import config
+from auditlog import AuditLog
 from store import Application, Store
 
 log = logging.getLogger("lifeinvader.applications")
@@ -118,9 +119,18 @@ class ReviewView(discord.ui.View):
 
 
 class ApplicationsService:
-    def __init__(self, store: Store, tz: ZoneInfo) -> None:
+    def __init__(self, store: Store, tz: ZoneInfo, audit_log: AuditLog) -> None:
         self.store = store
         self.tz = tz
+        self.audit_log = audit_log
+
+    @staticmethod
+    def _display(user: discord.abc.User) -> str:
+        return (
+            getattr(user, "display_name", None)
+            or getattr(user, "name", None)
+            or str(user.id)
+        )
 
     def review_embed(self, app: Application, status: str | None = None) -> discord.Embed:
         status = status or app.status
@@ -323,6 +333,17 @@ class ApplicationsService:
             return
 
         self.store.set_application_status(app.id, "approved", interaction.user.id)
+        self.audit_log.append(
+            application_id=app.id,
+            decision="Одобрено",
+            name=app.name,
+            static=app.static,
+            nickname=nickname,
+            applicant=getattr(member, "display_name", None) or str(app.applicant_id),
+            applicant_id=app.applicant_id,
+            reviewer=self._display(interaction.user),
+            reviewer_id=interaction.user.id,
+        )
         approved = replace(app, status="approved")
         await interaction.edit_original_response(
             embed=self.review_embed(approved), view=None
@@ -366,6 +387,28 @@ class ApplicationsService:
             return
 
         self.store.set_application_status(app.id, "declined", interaction.user.id)
+        member = interaction.guild.get_member(app.applicant_id) if interaction.guild else None
+        if member is None and interaction.guild is not None:
+            fetcher = getattr(interaction.guild, "fetch_member", None)
+            if fetcher is not None:
+                try:
+                    member = await fetcher(app.applicant_id)
+                except discord.HTTPException:
+                    member = None
+        self.audit_log.append(
+            application_id=app.id,
+            decision="Отклонено",
+            name=app.name,
+            static=app.static,
+            nickname="",
+            applicant=(
+                getattr(member, "display_name", None) if member is not None else None
+            )
+            or str(app.applicant_id),
+            applicant_id=app.applicant_id,
+            reviewer=self._display(interaction.user),
+            reviewer_id=interaction.user.id,
+        )
         declined = replace(app, status="declined")
         await interaction.edit_original_response(
             embed=self.review_embed(declined), view=None
