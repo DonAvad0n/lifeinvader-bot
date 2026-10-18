@@ -13,6 +13,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import config
+import notices
 from applications import ApplicationsService, ApplyPanelView, ReviewView
 from auditlog import AuditLog
 from sheet import WEEKDAYS, DayGrid, SheetCache, SheetError, Slot
@@ -333,7 +334,7 @@ class EfiryService:
         await interaction.response.defer()
         message = await self._resolve_message(interaction)
         if message is None:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Панель эфиров не найдена — создайте её командой /панель.", ephemeral=True
             )
             return
@@ -341,13 +342,13 @@ class EfiryService:
             grid, claims, page = await self.state(interaction.channel_id)
         except SheetError as exc:
             await self.update_message(message, interaction=interaction)
-            await interaction.followup.send(f"⚠️ {exc}", ephemeral=True)
+            await notices.reply(interaction, f"⚠️ {exc}", ephemeral=True)
             return
 
         slot_index = page * SLOTS_PER_PAGE + index
         if slot_index >= len(grid.slots):
             await self.update_message(message, interaction=interaction)
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Этот слот уже вне сетки — нажмите 🔄, чтобы обновить.", ephemeral=True
             )
             return
@@ -358,7 +359,7 @@ class EfiryService:
 
         if claim is not None and claim.user_id != user.id:
             await self.update_message(message, interaction=interaction)
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 f"Волна #{slot_index + 1} ({slot.time}) уже занята — {claim.user_name}.",
                 ephemeral=True,
             )
@@ -380,13 +381,13 @@ class EfiryService:
         fresh_claims = self.store.claims(interaction.channel_id, grid.day)
         new_page = align_page(len(grid.slots), fresh_claims)
         await self.update_message(message, page=new_page, interaction=interaction)
-        await interaction.followup.send(notice, ephemeral=True)
+        await notices.reply(interaction, notice, ephemeral=True)
 
     async def page(self, interaction: discord.Interaction, delta: int) -> None:
         await interaction.response.defer()
         message = await self._resolve_message(interaction)
         if message is None:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Панель эфиров не найдена — создайте её командой /панель.", ephemeral=True
             )
             return
@@ -394,11 +395,11 @@ class EfiryService:
             grid, _, page = await self.state(interaction.channel_id)
         except SheetError as exc:
             await self.update_message(message, interaction=interaction)
-            await interaction.followup.send(f"⚠️ {exc}", ephemeral=True)
+            await notices.reply(interaction, f"⚠️ {exc}", ephemeral=True)
             return
         target = clamp_page(page + delta, len(grid.slots))
         if target == page:
-            await interaction.followup.send("Дальше страниц нет.", ephemeral=True)
+            await notices.reply(interaction, "Дальше страниц нет.", ephemeral=True)
             return
         await self.update_message(message, page=target, interaction=interaction)
 
@@ -406,12 +407,12 @@ class EfiryService:
         await interaction.response.defer()
         message = await self._resolve_message(interaction)
         if message is None:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Панель эфиров не найдена — создайте её командой /панель.", ephemeral=True
             )
             return
         await self.update_message(message, force=True, interaction=interaction)
-        await interaction.followup.send(
+        await notices.reply(interaction, 
             f"Данные перечитаны из таблицы, день — {self.today:%d.%m.%Y} (МСК).",
             ephemeral=True,
         )
@@ -603,7 +604,7 @@ class EfiryBot(commands.Bot):
             log.error("Ошибка команды: %s", error)
             text = "Не удалось выполнить команду — подробности в логе бота."
         if interaction.response.is_done():
-            await interaction.followup.send(text, ephemeral=True)
+            await notices.reply(interaction, text, ephemeral=True)
         else:
             await interaction.response.send_message(text, ephemeral=True)
 
@@ -622,12 +623,12 @@ class EfiryBot(commands.Bot):
                     message = None
             if message is not None:
                 await bot.service.update_message(message, force=True)
-                await interaction.followup.send(
+                await notices.reply(interaction, 
                     "Панель уже есть в канале — обновил её.", ephemeral=True
                 )
                 return
             embed, view = await bot.service.render(interaction.channel_id)
-            message = await interaction.followup.send(embed=embed, view=view, wait=True)
+            message = await notices.reply(interaction, embed=embed, view=view, wait=True)
             bot.store.save_panel(
                 interaction.channel_id, message.id, bot.service.today, view.page
             )
@@ -642,7 +643,7 @@ class EfiryBot(commands.Bot):
             await interaction.response.defer()
             panel_row = bot.store.panel(interaction.channel_id)
             if panel_row is None or interaction.channel is None:
-                await interaction.followup.send(
+                await notices.reply(interaction, 
                     "В этом канале нет панели — создайте её командой /панель.",
                     ephemeral=True,
                 )
@@ -651,13 +652,13 @@ class EfiryBot(commands.Bot):
                 message = await interaction.channel.fetch_message(panel_row.message_id)
             except discord.HTTPException:
                 bot.store.delete_panel(interaction.channel_id)
-                await interaction.followup.send(
+                await notices.reply(interaction, 
                     "Сообщение панели пропало — создайте её заново командой /панель.",
                     ephemeral=True,
                 )
                 return
             await bot.service.update_message(message, force=True)
-            await interaction.followup.send("Панель обновлена.", ephemeral=True)
+            await notices.reply(interaction, "Панель обновлена.", ephemeral=True)
 
         return refresh
 
@@ -673,7 +674,7 @@ class EfiryBot(commands.Bot):
                 grid = await bot.cache.day(day)
             except SheetError:
                 grid = None
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 bot.service.summary_text(day, grid, claims), ephemeral=True
             )
 
@@ -697,7 +698,7 @@ class EfiryBot(commands.Bot):
                     message = None
                 if message is not None:
                     await bot.service.update_message(message, page=0)
-            await interaction.followup.send(f"Снято отметок: {removed}.", ephemeral=True)
+            await notices.reply(interaction, f"Снято отметок: {removed}.", ephemeral=True)
 
         return reset
 
@@ -712,7 +713,7 @@ class EfiryBot(commands.Bot):
         async def applications(interaction: discord.Interaction) -> None:
             await interaction.response.defer(ephemeral=True)
             await bot.apps.ensure_panel(bot)
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Панель заявок опубликована или обновлена.", ephemeral=True
             )
 

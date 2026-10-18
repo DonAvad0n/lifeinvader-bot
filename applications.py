@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import discord
 
 import config
+import notices
 from auditlog import AuditLog
 from store import Application, Store
 
@@ -203,7 +204,7 @@ class ApplicationsService:
         await interaction.response.defer(ephemeral=True, thinking=True)
         guild = interaction.guild
         if guild is None:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Заявку можно подать только на сервере.", ephemeral=True
             )
             return
@@ -212,11 +213,11 @@ class ApplicationsService:
         static = (raw_static or "").strip()
         error = validate_form(name, static)
         if error is not None:
-            await interaction.followup.send(f"⚠️ {error}", ephemeral=True)
+            await notices.reply(interaction, f"⚠️ {error}", ephemeral=True)
             return
 
         if self.store.pending_application(guild.id, interaction.user.id) is not None:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "У вас уже есть заявка на рассмотрении — дождитесь ответа руководства.",
                 ephemeral=True,
             )
@@ -225,7 +226,7 @@ class ApplicationsService:
         channel = guild.get_channel(config.APPLY_REVIEW_CHANNEL_ID)
         if not isinstance(channel, discord.abc.Messageable):
             log.warning("Канал заявок %s недоступен", config.APPLY_REVIEW_CHANNEL_ID)
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Канал для заявок не найден — сообщите руководству.", ephemeral=True
             )
             return
@@ -247,7 +248,7 @@ class ApplicationsService:
         application_id = self.store.create_application(
             guild.id, interaction.user.id, name, static, channel.id, message.id
         )
-        await interaction.followup.send(
+        await notices.reply(interaction, 
             f"Заявка №{application_id} отправлена на рассмотрение. "
             f"Имя в заявке: **{name}**, статик: **{static}**.",
             ephemeral=True,
@@ -267,15 +268,15 @@ class ApplicationsService:
         await interaction.response.defer()
         app = self._resolve(interaction)
         if app is None:
-            await interaction.followup.send("Заявка не найдена в базе.", ephemeral=True)
+            await notices.reply(interaction, "Заявка не найдена в базе.", ephemeral=True)
             return
         if app.status != "pending":
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Эта заявка уже обработана.", ephemeral=True
             )
             return
         if not self._can_review(interaction):
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Одобрять заявки могут только участники с правом «Управление ролями».",
                 ephemeral=True,
             )
@@ -283,7 +284,7 @@ class ApplicationsService:
 
         guild = interaction.guild
         if guild is None:
-            await interaction.followup.send("Только на сервере.", ephemeral=True)
+            await notices.reply(interaction, "Только на сервере.", ephemeral=True)
             return
 
         try:
@@ -291,7 +292,7 @@ class ApplicationsService:
                 app.applicant_id
             )
         except discord.HTTPException:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Не удалось найти участника на сервере — возможно, он вышел.",
                 ephemeral=True,
             )
@@ -326,7 +327,7 @@ class ApplicationsService:
                 problems.append(f"Discord отклонил выдачу роли (HTTP {exc.status})")
 
         if problems:
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "⚠️ Заявка осталась на рассмотрении: " + "; ".join(problems) + ".",
                 ephemeral=True,
             )
@@ -355,7 +356,7 @@ class ApplicationsService:
                 await audit_channel.send(embed=self.audit_embed(app, interaction.user))
             except discord.HTTPException as exc:
                 log.warning("Не удалось записать кадровый аудит: %s", exc)
-                await interaction.followup.send(
+                await notices.reply(interaction, 
                     "Заявка одобрена, но запись в кадровый аудит не отправилась — "
                     "проверьте права бота в том канале.",
                     ephemeral=True,
@@ -364,7 +365,7 @@ class ApplicationsService:
         else:
             log.warning("Канал аудита %s недоступен", config.APPLY_AUDIT_CHANNEL_ID)
 
-        await interaction.followup.send(
+        await notices.reply(interaction, 
             f"Одобрено: **{nickname}**, роль «Стажёр» выдана.", ephemeral=True
         )
 
@@ -372,15 +373,15 @@ class ApplicationsService:
         await interaction.response.defer()
         app = self._resolve(interaction)
         if app is None:
-            await interaction.followup.send("Заявка не найдена в базе.", ephemeral=True)
+            await notices.reply(interaction, "Заявка не найдена в базе.", ephemeral=True)
             return
         if app.status != "pending":
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Эта заявка уже обработана.", ephemeral=True
             )
             return
         if not self._can_review(interaction):
-            await interaction.followup.send(
+            await notices.reply(interaction, 
                 "Отклонять заявки могут только участники с правом «Управление ролями».",
                 ephemeral=True,
             )
@@ -413,4 +414,4 @@ class ApplicationsService:
         await interaction.edit_original_response(
             embed=self.review_embed(declined), view=None
         )
-        await interaction.followup.send("Заявка отклонена.", ephemeral=True)
+        await notices.reply(interaction, "Заявка отклонена.", ephemeral=True)

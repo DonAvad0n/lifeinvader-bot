@@ -89,3 +89,4 @@ APPLY_AUDIT_CHANNEL_ID: int = int(os.getenv("APPLY_AUDIT_CHANNEL_ID", "156136202
 TRAINEE_ROLE_ID: int = int(os.getenv("TRAINEE_ROLE_ID", "1561362581736652861"))
 APPLY_ACTION_TEXT: str = os.getenv("APPLY_ACTION_TEXT", "Принят на 1").strip()
 APPLY_REASON_TEXT: str = os.getenv("APPLY_REASON_TEXT", "Собеседование").strip()
+EPHEMERAL_DELETE_SECONDS: int = int(os.getenv("EPHEMERAL_DELETE_SECONDS", "30"))
