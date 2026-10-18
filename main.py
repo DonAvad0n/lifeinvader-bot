@@ -593,7 +593,6 @@ class EfiryBot(commands.Bot):
         self.tree.add_command(self._summary_command())
         self.tree.add_command(self._reset_command())
         self.tree.add_command(self._applications_command())
-        self.tree.add_command(self._audit_command())
 
     async def _on_app_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -718,27 +717,6 @@ class EfiryBot(commands.Bot):
             )
 
         return applications
-
-    def _audit_command(self) -> app_commands.Command:
-        bot = self
-
-        @app_commands.command(
-            name="журнал", description="Скачать журнал приёма сотрудников (CSV)"
-        )
-        @app_commands.checks.has_permissions(manage_guild=True)
-        async def journal(interaction: discord.Interaction) -> None:
-            await interaction.response.defer(ephemeral=True)
-            if not bot.audit_log.exists():
-                await interaction.followup.send(
-                    "Журнал пока пуст — ни одной обработанной заявки.", ephemeral=True
-                )
-                return
-            await interaction.followup.send(
-                file=discord.File(bot.audit_log.path, filename="audit.csv"),
-                ephemeral=True,
-            )
-
-        return journal
 
     async def _tick(self) -> None:
         await self.wait_until_ready()
