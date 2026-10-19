@@ -77,6 +77,7 @@ REMINDER_MINUTES: int = int(os.getenv("REMINDER_MINUTES", "1"))
 REMINDER_LEAD_SECONDS: int = int(os.getenv("REMINDER_LEAD_SECONDS", "300"))
 
 SUMMARY_HOUR, SUMMARY_MINUTE = _time_tuple(os.getenv("SUMMARY_TIME", "22:17"), (22, 17))
+SUMMARY_WINDOW_MINUTES: int = int(os.getenv("SUMMARY_WINDOW_MINUTES", "180"))
 DAILY_POST_HOUR, DAILY_POST_MINUTE = _time_tuple(os.getenv("DAILY_POST_TIME", "08:00"), (8, 0))
 
 DB_PATH: Path = DATA_DIR / os.getenv("DB_FILE", "efiry.sqlite3")

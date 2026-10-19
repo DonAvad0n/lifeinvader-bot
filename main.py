@@ -236,6 +236,8 @@ class EfiryService:
         self.cache = cache
         self.tz = tz
         self._role_ids: dict[int, int] = {}
+        self._sent_summaries: set[tuple[int, str]] = set()
+        self._posted_forms: set[tuple[int, str]] = set()
 
     @property
     def today(self) -> date:
@@ -503,20 +505,34 @@ class EfiryService:
 
     async def check_summaries(self, bot: "EfiryBot") -> None:
         now = self.now
-        if (now.hour, now.minute) < (config.SUMMARY_HOUR, config.SUMMARY_MINUTE):
+        start = config.SUMMARY_HOUR * 60 + config.SUMMARY_MINUTE
+        current = now.hour * 60 + now.minute
+        if current < start:
+            return
+        if config.SUMMARY_WINDOW_MINUTES > 0 and current >= start + config.SUMMARY_WINDOW_MINUTES:
             return
         day = now.date()
         for panel_row in self.store.all_panels():
             channel = bot.get_channel(panel_row.channel_id)
             if channel is None:
                 continue
-            if self.store.summary_sent(channel.id, day):
+            key = (channel.id, day.isoformat())
+            if key in self._sent_summaries:
+                continue
+            try:
+                already = self.store.summary_sent(channel.id, day)
+            except Exception:
+                log.exception("Не удалось прочитать отметку итога дня")
+                already = False
+            if already:
+                self._sent_summaries.add(key)
                 continue
             claims = self.store.claims(channel.id, day)
             try:
                 grid = await self.cache.day(day)
             except SheetError:
                 grid = None
+            self._sent_summaries.add(key)
             try:
                 await channel.send(
                     self.summary_text(day, grid, claims),
@@ -524,8 +540,18 @@ class EfiryService:
                 )
             except discord.HTTPException as exc:
                 log.warning("Не удалось отправить итог дня: %s", exc)
+                self._sent_summaries.discard(key)
                 continue
-            self.store.mark_summary(channel.id, day)
+            except Exception:
+                log.exception("Сбой при отправке итога дня")
+                self._sent_summaries.discard(key)
+                continue
+            try:
+                self.store.mark_summary(channel.id, day)
+            except Exception:
+                log.exception("Итог дня отправлен, но отметка в базе не сохранилась")
+            else:
+                log.info("Итог дня за %s отправлен в канал %s", day, channel.id)
 
     async def check_daily_post(self, bot: "EfiryBot") -> None:
         now = self.now
@@ -536,16 +562,30 @@ class EfiryService:
             channel = bot.get_channel(panel_row.channel_id)
             if channel is None:
                 continue
-            if self.store.post_sent(channel.id, day):
+            key = (channel.id, day.isoformat())
+            if key in self._posted_forms:
+                continue
+            try:
+                already = self.store.post_sent(channel.id, day)
+            except Exception:
+                log.exception("Не удалось прочитать отметку новой формы")
+                already = False
+            if already:
+                self._posted_forms.add(key)
                 continue
             embed, view = await self.render(channel.id, page=0, force=True)
+            self._posted_forms.add(key)
             try:
                 message = await channel.send(embed=embed, view=view)
             except discord.HTTPException as exc:
                 log.warning("Не удалось отправить новую форму: %s", exc)
+                self._posted_forms.discard(key)
                 continue
-            self.store.save_panel(channel.id, message.id, day, view.page)
-            self.store.mark_post(channel.id, day, message.id)
+            try:
+                self.store.save_panel(channel.id, message.id, day, view.page)
+                self.store.mark_post(channel.id, day, message.id)
+            except Exception:
+                log.exception("Новая форма отправлена, но отметка в базе не сохранилась")
             log.info("Новая форма на %s отправлена в канал %s", day, channel.id)
             if panel_row.message_id != message.id:
                 await self._retire_message(channel, panel_row.message_id)
@@ -799,6 +839,7 @@ class EfiryBot(commands.Bot):
             config.SUMMARY_HOUR,
             config.SUMMARY_MINUTE,
         )
+        log.info("База: %s | журнал: %s", config.DB_PATH, self.audit_log.path)
 
     async def _ensure_panel_channel(self) -> None:
         channel = self.get_channel(config.PANEL_CHANNEL_ID)
